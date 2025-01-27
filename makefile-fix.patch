@@ -1,0 +1,40 @@
+From eb36e350fd00e257f0e9eab5245ca5e07d393ac2 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?YC=E9=85=B1luyancib?= <luyancib@qq.com>
+Date: Mon, 27 Jan 2025 17:09:34 +0800
+Subject: [PATCH] patch compatible for non-gki
+
+---
+ kernel/Makefile | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/kernel/Makefile b/kernel/Makefile
+index 9a35b3bf..cc89150a 100644
+--- a/kernel/Makefile
++++ b/kernel/Makefile
+@@ -138,4 +138,23 @@ endif
+ ccflags-y += -Wno-implicit-function-declaration -Wno-strict-prototypes -Wno-int-conversion -Wno-gcc-compat
+ ccflags-y += -Wno-declaration-after-statement -Wno-unused-function
+ 
++## For non-gki compatiblity ##
++ifeq ($(shell grep -q " current_sid(void)" $(srctree)/security/selinux/include/objsec.h; echo $$?),0)
++ccflags-y += -DKSU_COMPAT_HAS_CURRENT_SID
++endif
++
++ifeq ($(shell grep -q "struct selinux_state " $(srctree)/security/selinux/include/security.h; echo $$?),0)
++ccflags-y += -DKSU_COMPAT_HAS_SELINUX_STATE
++endif
++
++## For susfs stuff ##
++ifeq ($(shell test -e $(srctree)/fs/susfs.c; echo $$?),0)
++$(eval SUSFS_VERSION=$(shell cat $(srctree)/include/linux/susfs.h | grep -E '^#define SUSFS_VERSION' | cut -d' ' -f3 | sed 's/"//g'))
++$(info )
++$(info -- SUSFS_VERSION: $(SUSFS_VERSION))
++else
++$(info -- You have not integrate susfs in your kernel.)
++$(info -- Read: https://gitlab.com/simonpunk/susfs4ksu)
++endif
++
+ # Keep a new line here!! Because someone may append config
+-- 
+2.39.5
+
