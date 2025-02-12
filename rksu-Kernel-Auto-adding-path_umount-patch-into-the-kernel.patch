@@ -1,21 +1,43 @@
-From 3785fdd1cee84315bda8fd488146d2022148624f Mon Sep 17 00:00:00 2001
+From c7886b4de88927c6e13debad2b05f8f58eb8b3d5 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?YC=E9=85=B1luyancib?= <luyancib@qq.com>
 Date: Wed, 12 Feb 2025 08:52:13 +0800
 Subject: [PATCH] Kernel: Auto adding path_umount patch into the kernel source
 
 ---
- kernel/Makefile | 22 ++++++++++++++++++++--
- 1 file changed, 20 insertions(+), 2 deletions(-)
+ kernel/Makefile | 44 ++++++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 42 insertions(+), 2 deletions(-)
 
 diff --git a/kernel/Makefile b/kernel/Makefile
-index 350bac41..2c9d74a2 100644
+index 350bac41..ca698ea6 100644
 --- a/kernel/Makefile
 +++ b/kernel/Makefile
-@@ -14,11 +14,29 @@ kernelsu-objs += selinux/rules.o
+@@ -14,11 +14,51 @@ kernelsu-objs += selinux/rules.o
  ccflags-y += -I$(srctree)/security/selinux -I$(srctree)/security/selinux/include
  ccflags-y += -I$(objtree)/security/selinux -include $(srctree)/include/uapi/asm-generic/errno.h
  
 -# Do checks before compile
++ifneq ($(shell grep -Eq "^static int can_umount" $(srctree)/fs/namespace.c; echo $$?),0)
++$(info -- KSU_NEXT: adding function 'static int can_umount(const struct path *path, int flags);' to $(srctree)/fs/namespace.c)
++CAN_UMOUNT = static int can_umount(const struct path *path, int flags)\n\
++{\n\t\
++        struct mount *mnt = real_mount(path->mnt);\n\t\
++        if (flags & ~(MNT_FORCE | MNT_DETACH | MNT_EXPIRE | UMOUNT_NOFOLLOW))\n\t\t\
++                return -EINVAL;\n\t\
++        if (!may_mount())\n\t\t\
++                return -EPERM;\n\t\
++        if (path->dentry != path->mnt->mnt_root)\n\t\t\
++                return -EINVAL;\n\t\
++        if (!check_mnt(mnt))\n\t\t\
++                return -EINVAL;\n\t\
++        if (mnt->mnt.mnt_flags & MNT_LOCKED)\n\t\t\
++                return -EINVAL;\n\t\
++        if (flags & MNT_FORCE && !capable(CAP_SYS_ADMIN))\n\t\t\
++                return -EPERM;\n\t\
++        return 0;\n\
++}\n
++$(shell sed -i '/^static bool is_mnt_ns_file/i $(CAN_UMOUNT)' $(srctree)/fs/namespace.c;)
++endif
++
  ifneq ($(shell grep -q "int path_umount" $(srctree)/fs/namespace.c; echo $$?),0)
 -$(error -- Backporting path_umount is mandatory !! Read: https://kernelsu.org/guide/how-to-integrate-for-non-gki.html#how-to-backport-path-umount)
 +$(info -- Adding function 'int path_umount(struct path *path, int flags);' to $(srctree)/fs/namespace.c)
@@ -31,13 +53,13 @@ index 350bac41..2c9d74a2 100644
 +        return ret;\n\
 +}\n
 +$(shell sed -i '/^static bool is_mnt_ns_file/i $(PATH_UMOUNT)' $(srctree)/fs/namespace.c;)
- endif
- 
++endif
++
 +ifneq ($(shell grep -Eq "^int path_umount" $(srctree)/fs/internal.h; echo $$?),0)
 +$(shell sed -i '/^extern void __init mnt_init/a int path_umount(struct path *path, int flags);' $(srctree)/fs/internal.h;)
 +$(info -- Adding 'int path_umount(struct path *path, int flags);' to $(srctree)/fs/internal.h)
-+endif
-+
+ endif
+ 
 +
 +
  # GKI manual hook checks
