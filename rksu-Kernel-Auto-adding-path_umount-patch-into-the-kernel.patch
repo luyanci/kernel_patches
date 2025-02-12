@@ -1,0 +1,48 @@
+From 3785fdd1cee84315bda8fd488146d2022148624f Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?YC=E9=85=B1luyancib?= <luyancib@qq.com>
+Date: Wed, 12 Feb 2025 08:52:13 +0800
+Subject: [PATCH] Kernel: Auto adding path_umount patch into the kernel source
+
+---
+ kernel/Makefile | 22 ++++++++++++++++++++--
+ 1 file changed, 20 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/Makefile b/kernel/Makefile
+index 350bac41..2c9d74a2 100644
+--- a/kernel/Makefile
++++ b/kernel/Makefile
+@@ -14,11 +14,29 @@ kernelsu-objs += selinux/rules.o
+ ccflags-y += -I$(srctree)/security/selinux -I$(srctree)/security/selinux/include
+ ccflags-y += -I$(objtree)/security/selinux -include $(srctree)/include/uapi/asm-generic/errno.h
+ 
+-# Do checks before compile
+ ifneq ($(shell grep -q "int path_umount" $(srctree)/fs/namespace.c; echo $$?),0)
+-$(error -- Backporting path_umount is mandatory !! Read: https://kernelsu.org/guide/how-to-integrate-for-non-gki.html#how-to-backport-path-umount)
++$(info -- Adding function 'int path_umount(struct path *path, int flags);' to $(srctree)/fs/namespace.c)
++PATH_UMOUNT = int path_umount(struct path *path, int flags)\n\
++{\n\t\
++        struct mount *mnt = real_mount(path->mnt);\n\t\
++        int ret;\n\t\
++        ret = can_umount(path, flags);\n\t\
++        if (!ret)\n\t\t\
++                ret = do_umount(mnt, flags);\n\t\
++        dput(path->dentry);\n\t\
++        mntput_no_expire(mnt);\n\t\
++        return ret;\n\
++}\n
++$(shell sed -i '/^static bool is_mnt_ns_file/i $(PATH_UMOUNT)' $(srctree)/fs/namespace.c;)
+ endif
+ 
++ifneq ($(shell grep -Eq "^int path_umount" $(srctree)/fs/internal.h; echo $$?),0)
++$(shell sed -i '/^extern void __init mnt_init/a int path_umount(struct path *path, int flags);' $(srctree)/fs/internal.h;)
++$(info -- Adding 'int path_umount(struct path *path, int flags);' to $(srctree)/fs/internal.h)
++endif
++
++
++
+ # GKI manual hook checks
+ # https://github.com/Pzqqt/android_kernel_xiaomi_marble/commit/5b8596b5604bcd0e6e12697a01136a0bb9eb0257
+ ifeq ($(CONFIG_KSU_MANUAL_HOOK),y)
+-- 
+2.39.5
+
